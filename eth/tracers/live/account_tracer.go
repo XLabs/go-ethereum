@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"net"
 	"os"
 	"sync"
 	"time"
@@ -32,14 +31,11 @@ type AccountTracer struct {
 	transactions []TransactionDetail
 	startedTxs   map[common.Hash]TransactionDetail
 	txMux        sync.Mutex
-	buffer       *bytes.Buffer
-	bufferMux    sync.Mutex
 	logBuffer    *bytes.Buffer
 	logMux       sync.Mutex
 	flushTicker  *time.Ticker
 	ctx          context.Context
 	cancelCtx    context.CancelFunc
-	conn         net.Conn
 	logFile      *os.File
 }
 
@@ -71,12 +67,7 @@ func NewAccountTracer(accounts []string) *AccountTracer {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	conn, err := net.Dial("unix", "/tmp/account_tracer.sock")
-	if err != nil {
-		log.Fatal("Failed to connect to socket:", err)
-	}
-
-	logFile, err := os.OpenFile("account_tracer.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile("account_tracer_output.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal("Failed to open log file:", err)
 	}
@@ -84,12 +75,10 @@ func NewAccountTracer(accounts []string) *AccountTracer {
 	tracer := &AccountTracer{
 		accounts:    accountMap,
 		startedTxs:  make(map[common.Hash]TransactionDetail),
-		buffer:      new(bytes.Buffer),
 		logBuffer:   new(bytes.Buffer),
 		flushTicker: time.NewTicker(1 * time.Minute), // Adjust the interval as needed
 		ctx:         ctx,
 		cancelCtx:   cancel,
-		conn:        conn,
 		logFile:     logFile,
 	}
 
@@ -104,16 +93,15 @@ func (t *AccountTracer) flushBufferPeriodically(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.flushTicker.C:
-			t.bufferMux.Lock()
-			if t.buffer.Len() > 0 {
-				_, err := t.conn.Write(t.buffer.Bytes())
+			t.logMux.Lock()
+			if t.logBuffer.Len() > 0 {
+				_, err := t.logFile.Write(t.logBuffer.Bytes())
 				if err != nil {
-					log.Println("Write error:", err)
-					t.reconnect()
+					log.Println("File write error:", err)
 				}
-				t.buffer.Reset()
+				t.logBuffer.Reset()
 			}
-			t.bufferMux.Unlock()
+			t.logMux.Unlock()
 		}
 	}
 }
@@ -135,16 +123,6 @@ func (t *AccountTracer) writeLogToFile(ctx context.Context) {
 			t.logMux.Unlock()
 		}
 	}
-}
-
-func (t *AccountTracer) reconnect() {
-	t.conn.Close()
-	conn, err := net.Dial("unix", "/tmp/account_tracer.sock")
-	if err != nil {
-		log.Println("Failed to reconnect to socket:", err)
-		return
-	}
-	t.conn = conn
 }
 
 func (t *AccountTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, from common.Address) {
@@ -222,10 +200,10 @@ func (t *AccountTracer) OnBlockStart(event tracing.BlockEvent) {
 		return
 	}
 
-	t.bufferMux.Lock()
-	t.buffer.Write(data)
-	t.buffer.WriteByte('\n') // Add a newline or delimiter if needed
-	t.bufferMux.Unlock()
+	t.logMux.Lock()
+	t.logBuffer.Write(data)
+	t.logBuffer.WriteByte('\n') // Add a newline or delimiter if needed
+	t.logMux.Unlock()
 }
 
 func (t *AccountTracer) OnBlockEnd(err error) {
@@ -237,6 +215,5 @@ func (t *AccountTracer) OnClose() {
 	t.logBuffer.WriteString("\n[OnClose]: Executing OnClose hook\n")
 	t.flushTicker.Stop()
 	t.cancelCtx()
-	_ = t.conn.Close()
 	_ = t.logFile.Close()
 }
