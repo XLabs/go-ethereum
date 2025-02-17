@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ type AccountTracer struct {
 	ctx          context.Context
 	cancelCtx    context.CancelFunc
 	logFile      *os.File
+	conn         net.Conn
 }
 
 func init() {
@@ -49,7 +51,11 @@ func newAccountTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		return nil, err
 	}
 
-	tracer := NewAccountTracer(accounts)
+	tracer, err := NewAccountTracer(accounts)
+	if err != nil {
+		return nil, err
+	}
+
 	return &tracing.Hooks{
 		OnTxStart:    tracer.OnTxStart,
 		OnTxEnd:      tracer.OnTxEnd,
@@ -59,7 +65,7 @@ func newAccountTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 	}, nil
 }
 
-func NewAccountTracer(accounts []string) *AccountTracer {
+func NewAccountTracer(accounts []string) (*AccountTracer, error) {
 	accountMap := make(map[string]bool)
 	for _, account := range accounts {
 		accountMap[account] = true
@@ -69,7 +75,15 @@ func NewAccountTracer(accounts []string) *AccountTracer {
 
 	logFile, err := os.OpenFile("account_tracer_output.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatal("Failed to open log file:", err)
+		cancel()
+		return nil, fmt.Errorf("failed to open log file: %w", err)
+	}
+
+	conn, err := net.Dial("unix", "/tmp/account_tracer.sock")
+	if err != nil {
+		_ = logFile.Close()
+		cancel()
+		return nil, fmt.Errorf("failed to connect to socket: %w", err)
 	}
 
 	tracer := &AccountTracer{
@@ -80,11 +94,12 @@ func NewAccountTracer(accounts []string) *AccountTracer {
 		ctx:         ctx,
 		cancelCtx:   cancel,
 		logFile:     logFile,
+		conn:        conn,
 	}
 
 	go tracer.flushBufferPeriodically(ctx)
 	go tracer.writeLogToFile(ctx)
-	return tracer
+	return tracer, nil
 }
 
 func (t *AccountTracer) flushBufferPeriodically(ctx context.Context) {
@@ -126,6 +141,7 @@ func (t *AccountTracer) writeLogToFile(ctx context.Context) {
 }
 
 func (t *AccountTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, from common.Address) {
+
 	t.txMux.Lock()
 	defer t.txMux.Unlock()
 
@@ -184,13 +200,6 @@ func (t *AccountTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	}
 }
 
-func (t *AccountTracer) GetResult() (json.RawMessage, error) {
-	t.txMux.Lock()
-	defer t.txMux.Unlock()
-
-	return json.Marshal(t.transactions)
-}
-
 func (t *AccountTracer) OnBlockStart(event tracing.BlockEvent) {
 	t.logBuffer.WriteString("\n[OnBlockStart]: Executing OnBlockStart hook\n")
 
@@ -215,5 +224,13 @@ func (t *AccountTracer) OnClose() {
 	t.logBuffer.WriteString("\n[OnClose]: Executing OnClose hook\n")
 	t.flushTicker.Stop()
 	t.cancelCtx()
+	_ = t.conn.Close()
 	_ = t.logFile.Close()
+}
+
+func (t *AccountTracer) GetResult() (json.RawMessage, error) {
+	t.txMux.Lock()
+	defer t.txMux.Unlock()
+
+	return json.Marshal(t.transactions)
 }
