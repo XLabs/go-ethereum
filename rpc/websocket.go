@@ -356,12 +356,17 @@ func (wc *websocketCodec) pingLoop() {
 			return
 
 		case <-wc.pingReset:
+			fmt.Println("pingReset")
 			if !pingTimer.Stop() {
+				fmt.Println("pingTimer.Stop() returned false. Draining pingTimer...")
 				<-pingTimer.C
+				fmt.Println("finished draining pingTimer")
 			}
+			fmt.Println("resetting pingTimer")
 			pingTimer.Reset(wsPingInterval)
 
 		case <-pingTimer.C:
+			fmt.Println("sending ping")
 			wc.jsonCodec.encMu.Lock()
 			wc.conn.SetWriteDeadline(time.Now().Add(wsPingWriteTimeout))
 			wc.conn.WriteMessage(websocket.PingMessage, nil)
@@ -370,6 +375,7 @@ func (wc *websocketCodec) pingLoop() {
 			pingTimer.Reset(wsPingInterval)
 
 		case <-wc.pongReceived:
+			fmt.Println("pongReceived")
 			wc.conn.SetReadDeadline(time.Time{})
 		}
 	}
