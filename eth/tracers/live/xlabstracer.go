@@ -36,16 +36,21 @@ func newXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		return nil, errors.New("xlabstracer output path is required")
 	}
 
-	if config.SocketFilePath == "" {
-		return nil, errors.New("xlabstracer socket file path is required")
-	}
-
-	// Store traces in a rotating file
 	logger := &lumberjack.Logger{
+		// Store traces in a rotating file
 		Filename: filepath.Join(config.LogFile, "xlabstracer.jsonl"),
 	}
+
 	if config.MaxSize > 0 {
 		logger.MaxSize = config.MaxSize
+	}
+
+	if config.SocketFilePath == "" {
+		config.SocketFilePath = "/tmp/trace.sock"
+		_, err := logger.Write([]byte(fmt.Sprintf("socket file path: %s", config.SocketFilePath)))
+		if err != nil {
+			return nil, fmt.Errorf("xlabstracer init error: failed to write socket file path to log. error:%s", err.Error())
+		}
 	}
 
 	// Open the unix-domain-socket
