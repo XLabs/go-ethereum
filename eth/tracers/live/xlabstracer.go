@@ -18,7 +18,7 @@ import (
 )
 
 func init() {
-	tracers.LiveDirectory.Register("supply", newXlabsTracer)
+	tracers.LiveDirectory.Register("xlabstracer", newXlabsTracer)
 }
 
 type xlabsTracerConfig struct {
