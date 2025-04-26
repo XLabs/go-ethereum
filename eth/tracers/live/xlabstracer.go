@@ -105,9 +105,21 @@ func (s *xlabsTracer) onBlockEnd(err error) {
 	// Copy all the data before moving on to the next block
 	txRecps := make([]*types.Receipt, 0, len(s.txReceipts))
 	copy(txRecps, s.txReceipts)
+
 	newBlock := s.currentBlockEvent.Block.Header()
-	finalizedBlock := types.CopyHeader(s.currentBlockEvent.Finalized)
-	safeBlock := types.CopyHeader(s.currentBlockEvent.Safe)
+	var finalizedBlock *types.Header
+	if s.currentBlockEvent.Finalized != nil {
+		finalizedBlock = types.CopyHeader(s.currentBlockEvent.Finalized)
+	} else {
+		s.logger.Println("xlabsTracer: Finalized block is nil")
+	}
+
+	var safeBlock *types.Header
+	if s.currentBlockEvent.Safe != nil {
+		safeBlock = types.CopyHeader(s.currentBlockEvent.Safe)
+	} else {
+		s.logger.Println("xlabsTracer: Safe block is nil")
+	}
 
 	payload := Event{
 		LatestBlock:    newBlock,
