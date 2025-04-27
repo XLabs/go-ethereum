@@ -44,6 +44,7 @@ var instance *xlabsTracer
 var loggger *log.Logger
 
 func init() {
+	fmt.Println("xlabsTracer Calling init()")
 	tracers.LiveDirectory.Register("xlabstracer", getXlabsTracer)
 }
 
