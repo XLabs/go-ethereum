@@ -109,17 +109,12 @@ func (t *xlabsTracer) onBlockEnd(err error) {
 		Receipts:    append([]*types.Receipt(nil), t.txReceipts...),
 	}
 
-	var finalizedBlock *types.Header
-	var safeBlock *types.Header
 	if t.currentBlockEvent.Finalized != nil {
-		finalizedBlock = types.CopyHeader(t.currentBlockEvent.Finalized)
+		payload.FinalizedBlock = types.CopyHeader(t.currentBlockEvent.Finalized)
 	}
 	if t.currentBlockEvent.Safe != nil {
-		safeBlock = types.CopyHeader(t.currentBlockEvent.Safe)
+		payload.SafeBlock = types.CopyHeader(t.currentBlockEvent.Safe)
 	}
-
-	payload.FinalizedBlock = finalizedBlock
-	payload.SafeBlock = safeBlock
 
 	go t.sendUDSMessage(payload)
 }
