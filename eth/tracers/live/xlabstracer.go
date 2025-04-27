@@ -1,7 +1,6 @@
 package live
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -10,7 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/eth/tracers/live/tracerproto"
+	"google.golang.org/protobuf/proto"
 	"log"
 	"net"
 	"os"
@@ -104,39 +104,64 @@ func (t *xlabsTracer) onBlockEnd(err error) {
 	}
 
 	payload := Event{
-		Version:        1,
-		LatestBlock:    t.currentBlockEvent.Block.Header(),
-		FinalizedBlock: nil,
-		SafeBlock:      nil,
-		Receipts:       append([]*types.Receipt(nil), t.txReceipts...),
+		Version:     1,
+		LatestBlock: t.currentBlockEvent.Block.Header(),
+		Receipts:    append([]*types.Receipt(nil), t.txReceipts...),
 	}
 
+	var finalizedBlock *types.Header
+	var safeBlock *types.Header
 	if t.currentBlockEvent.Finalized != nil {
-		payload.FinalizedBlock = types.CopyHeader(t.currentBlockEvent.Finalized)
+		finalizedBlock = types.CopyHeader(t.currentBlockEvent.Finalized)
 	}
 	if t.currentBlockEvent.Safe != nil {
-		payload.SafeBlock = types.CopyHeader(t.currentBlockEvent.Safe)
+		safeBlock = types.CopyHeader(t.currentBlockEvent.Safe)
 	}
+
+	payload.FinalizedBlock = finalizedBlock
+	payload.SafeBlock = safeBlock
 
 	go t.sendUDSMessage(payload)
 }
 
-func (t *xlabsTracer) sendUDSMessage(payload Event) {
-	var buf bytes.Buffer
-	if err := rlp.Encode(&buf, payload); err != nil {
-		t.logger.Printf("error encoding payload: %v", err)
+func (s *xlabsTracer) sendUDSMessage(payload Event) {
+	// Step 1: Convert your Event to tracerproto.Event
+
+	var receipts []*tracerproto.Receipt
+	for _, receipt := range payload.Receipts {
+		receipts = append(receipts, convertReceipt(receipt))
+	}
+
+	protoEvent := &tracerproto.Event{
+		LatestBlock: convertHeader(payload.LatestBlock),
+		Receipts:    receipts,
+	}
+	if payload.FinalizedBlock != nil {
+		protoEvent.FinalizedBlock = convertHeader(payload.FinalizedBlock)
+	}
+	if payload.SafeBlock != nil {
+		protoEvent.SafeBlock = convertHeader(payload.SafeBlock)
+	}
+
+	// Step 2: Marshal with protobuf
+	data, err := proto.Marshal(protoEvent)
+	if err != nil {
+		s.logger.Printf("Error marshaling proto message: %v\n", err)
 		return
 	}
 
-	length := uint32(buf.Len())
-	if err := binary.Write(t.conn, binary.BigEndian, length); err != nil {
-		t.logger.Printf("error writing length prefix: %v", err)
+	// Step 3: Write framed message (length + payload)
+	length := uint32(len(data))
+	if err := binary.Write(s.conn, binary.BigEndian, length); err != nil {
+		s.logger.Printf("Error writing message length: %v\n", err)
+		return
+	}
+	if _, err := s.conn.Write(data); err != nil {
+		s.logger.Printf("Error writing message payload: %v\n", err)
 		return
 	}
 
-	if _, err := t.conn.Write(buf.Bytes()); err != nil {
-		t.logger.Printf("error writing payload: %v", err)
-	}
+	s.logger.Printf("Message sent successfully (blockNumber: %d)\n", payload.LatestBlock.Number)
 }
 
 func (s *xlabsTracer) OnTxEnd(receipt *types.Receipt, err error) {

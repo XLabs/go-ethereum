@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package xlabstracer;
+
+option go_package = "xlabs/go-ethereum/eth/tracers/live/tracerproto";
+
+
+// Header represents a block header
+message Header {
+  bytes parentHash = 1;
+  bytes uncleHash = 2;
+  bytes coinbase = 3;
+  bytes root = 4;
+  bytes txHash = 5;
+  bytes receiptHash = 6;
+  bytes bloom = 7;
+  bytes difficulty = 8;
+  bytes number = 9;
+  uint64 gasLimit = 10;
+  uint64 gasUsed = 11;
+  uint64 time = 12;
+  bytes extra = 13;
+  bytes mixDigest = 14;
+  bytes nonce = 15;
+  bytes baseFee = 16;
+  bytes withdrawalsHash = 17;
+  optional uint64 blobGasUsed = 18;
+  optional uint64 excessBlobGas = 19;
+  bytes parentBeaconRoot = 20;
+}
+
+// Receipt represents a transaction receipt
+message Receipt {
+  uint64 status = 1;
+  uint64 cumulativeGasUsed = 2;
+  bytes bloom = 3;
+  uint64 txIndex = 4;
+  uint64 gasUsed = 5;
+  string contractAddress = 6;
+  repeated Log logs = 7;
+}
+
+// Log represents a log entry inside a receipt
+message Log {
+  string address = 1;
+  repeated string topics = 2;
+  bytes data = 3;
+  uint64 blockNumber = 4;
+  string txHash = 5;
+  uint64 txIndex = 6;
+  uint64 logIndex = 7;
+  bool removed = 8;
+}
+
+// Event is the top-level structure we transmit
+message Event {
+  Header latestBlock = 1;
+  optional Header finalizedBlock = 2;
+  optional Header safeBlock = 3;
+  repeated Receipt receipts = 4;
+}
+
