@@ -40,11 +40,31 @@ type Event struct {
 	Receipts       []*types.Receipt
 }
 
+var instance *xlabsTracer
+
 func init() {
-	tracers.LiveDirectory.Register("xlabstracer", newXlabsTracer)
+	tracers.LiveDirectory.Register("xlabstracer", getXlabsTracer)
 }
 
-func newXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
+func getXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
+	// reuse the instance if it already exists
+	if instance == nil {
+		var err error
+		instance, err = newXlabsTracer(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &tracing.Hooks{
+		OnBlockStart: instance.onBlockStart,
+		OnBlockEnd:   instance.onBlockEnd,
+		OnTxEnd:      instance.OnTxEnd,
+		OnClose:      instance.onClose,
+	}, nil
+}
+
+func newXlabsTracer(cfg json.RawMessage) (*xlabsTracer, error) {
+
 	var config xlabsTracerConfig
 	if err := json.Unmarshal(cfg, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
@@ -73,23 +93,16 @@ func newXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		return nil, fmt.Errorf("xlabstracer init error: failed to connect to unix-domain-socket. error:%s", err.Error())
 	}
 
-	logger.Printf("Starting xlabstracer\n")
+	logger.Printf("Creating instance of xlabstracer\n")
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
-	t := &xlabsTracer{
+	return &xlabsTracer{
 		conn:       conn,
 		logger:     logger,
 		logFile:    logFile,
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
-	}
-
-	return &tracing.Hooks{
-		OnBlockStart: t.onBlockStart,
-		OnBlockEnd:   t.onBlockEnd,
-		OnTxEnd:      t.OnTxEnd,
-		OnClose:      t.onClose,
 	}, nil
 }
 
@@ -101,7 +114,7 @@ func (s *xlabsTracer) onBlockStart(ev tracing.BlockEvent) {
 func (t *xlabsTracer) onBlockEnd(err error) {
 	defer t.cleanUp()
 
-	t.logger.Println("Executing onBlockEnd with error:%v", err != nil)
+	t.logger.Println("Executing onBlockEnd with error:", err != nil)
 
 	if err != nil {
 		return
@@ -125,7 +138,7 @@ func (t *xlabsTracer) onBlockEnd(err error) {
 
 func (s *xlabsTracer) sendUDSMessage(payload Event) {
 
-	s.logger.Println("Executing sendUDSMessage with blockNumber:%d", payload.LatestBlock.Number)
+	s.logger.Printf("Executing sendUDSMessage with blockNumber:%d\n", payload.LatestBlock.Number)
 
 	// Step 1: Convert your Event to tracerproto.Event
 
