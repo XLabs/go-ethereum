@@ -92,7 +92,7 @@ func newXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 }
 
 func (s *xlabsTracer) onBlockStart(ev tracing.BlockEvent) {
-	s.logger.Printf("block start: %v\n", ev)
+	s.logger.Printf("block start: %d\n", ev.Block.Header().Number)
 	s.currentBlockEvent = &ev
 }
 
@@ -151,8 +151,13 @@ func (s *xlabsTracer) sendUDSMessage(payload Event) {
 		s.logger.Printf("Error writing message length: %v\n", err)
 		return
 	}
-	if _, err := s.conn.Write(data); err != nil {
+	n, err := s.conn.Write(data)
+	if err != nil {
 		s.logger.Printf("Error writing message payload: %v\n", err)
+		return
+	}
+	if n != int(length) {
+		s.logger.Printf("Error writing message payload. Expected to write %d bytes but wrote: %d bytes.\n", length, n)
 		return
 	}
 
