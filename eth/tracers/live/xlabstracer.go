@@ -33,12 +33,10 @@ type xlabsTracer struct {
 }
 
 type Event struct {
-	Version        uint8         // Protocol version (start with 1)
-	LatestBlock    *types.Header // Always required
-	HasFinalized   bool          // If true, FinalizedBlock is present
-	FinalizedBlock *types.Header // Optional
-	HasSafe        bool          // If true, SafeBlock is present
-	SafeBlock      *types.Header // Optional
+	Version        uint8
+	LatestBlock    *types.Header
+	FinalizedBlock *types.Header // Optional (nil if missing)
+	SafeBlock      *types.Header // Optional (nil if missing)
 	Receipts       []*types.Receipt
 }
 
@@ -98,73 +96,47 @@ func (s *xlabsTracer) onBlockStart(ev tracing.BlockEvent) {
 	s.currentBlockEvent = &ev
 }
 
-func (s *xlabsTracer) onBlockEnd(err error) {
-	defer s.cleanUp()
+func (t *xlabsTracer) onBlockEnd(err error) {
+	defer t.cleanUp()
 
 	if err != nil {
 		return
-	}
-
-	// Copy all the data before moving on to the next block
-	txRecps := make([]*types.Receipt, 0, len(s.txReceipts))
-	copy(txRecps, s.txReceipts)
-
-	newBlock := s.currentBlockEvent.Block.Header()
-	var finalizedBlock *types.Header
-	if s.currentBlockEvent.Finalized != nil {
-		finalizedBlock = types.CopyHeader(s.currentBlockEvent.Finalized)
-	} else {
-		s.logger.Println("xlabsTracer: Finalized block is nil")
-	}
-
-	var safeBlock *types.Header
-	if s.currentBlockEvent.Safe != nil {
-		safeBlock = types.CopyHeader(s.currentBlockEvent.Safe)
-	} else {
-		s.logger.Println("xlabsTracer: Safe block is nil")
 	}
 
 	payload := Event{
 		Version:        1,
-		LatestBlock:    newBlock,
-		HasFinalized:   s.currentBlockEvent.Finalized != nil,
-		FinalizedBlock: finalizedBlock,
-		HasSafe:        s.currentBlockEvent.Safe != nil,
-		SafeBlock:      safeBlock,
-		Receipts:       txRecps,
+		LatestBlock:    t.currentBlockEvent.Block.Header(),
+		FinalizedBlock: nil,
+		SafeBlock:      nil,
+		Receipts:       append([]*types.Receipt(nil), t.txReceipts...),
 	}
 
-	if s.currentBlockEvent.Finalized != nil {
-		payload.FinalizedBlock = types.CopyHeader(s.currentBlockEvent.Finalized)
+	if t.currentBlockEvent.Finalized != nil {
+		payload.FinalizedBlock = types.CopyHeader(t.currentBlockEvent.Finalized)
 	}
-	if s.currentBlockEvent.Safe != nil {
-		payload.SafeBlock = types.CopyHeader(s.currentBlockEvent.Safe)
+	if t.currentBlockEvent.Safe != nil {
+		payload.SafeBlock = types.CopyHeader(t.currentBlockEvent.Safe)
 	}
 
-	// Send the payload to the unix-domain-socket
-	go s.sendUDSMessage(payload)
+	go t.sendUDSMessage(payload)
 }
 
-func (s *xlabsTracer) sendUDSMessage(payload Event) {
+func (t *xlabsTracer) sendUDSMessage(payload Event) {
 	var buf bytes.Buffer
 	if err := rlp.Encode(&buf, payload); err != nil {
-		s.logger.Printf("Error encoding payload: %v\n", err)
+		t.logger.Printf("error encoding payload: %v", err)
 		return
 	}
 
-	// prefix with 4-byte length to frame messages
 	length := uint32(buf.Len())
-	if err := binary.Write(s.conn, binary.BigEndian, length); err != nil {
-		s.logger.Printf("Error writing message length: %v\n", err)
+	if err := binary.Write(t.conn, binary.BigEndian, length); err != nil {
+		t.logger.Printf("error writing length prefix: %v", err)
 		return
 	}
 
-	_, err := s.conn.Write(buf.Bytes())
-	if err != nil {
-		s.logger.Printf("Error writing message to socket: %v\n", err)
+	if _, err := t.conn.Write(buf.Bytes()); err != nil {
+		t.logger.Printf("error writing payload: %v", err)
 	}
-
-	s.logger.Printf("Message sent successfully: blockNumber:%d\n", payload.LatestBlock.Number)
 }
 
 func (s *xlabsTracer) OnTxEnd(receipt *types.Receipt, err error) {
