@@ -41,16 +41,24 @@ type Event struct {
 }
 
 var instance *xlabsTracer
+var loggger *log.Logger
 
 func init() {
 	tracers.LiveDirectory.Register("xlabstracer", getXlabsTracer)
 }
 
 func getXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
+
+	if loggger != nil {
+		loggger.Println("variable loggger is not nil")
+		loggger.Println("variable instance is nil:", instance == nil)
+	}
+
 	// reuse the instance if it already exists
 	if instance == nil {
 		var err error
 		instance, err = newXlabsTracer(cfg)
+		loggger = instance.logger
 		if err != nil {
 			return nil, err
 		}
