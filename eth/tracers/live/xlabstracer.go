@@ -73,6 +73,8 @@ func newXlabsTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		return nil, fmt.Errorf("xlabstracer init error: failed to connect to unix-domain-socket. error:%s", err.Error())
 	}
 
+	logger.Printf("Starting xlabstracer\n")
+
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	t := &xlabsTracer{
@@ -99,6 +101,8 @@ func (s *xlabsTracer) onBlockStart(ev tracing.BlockEvent) {
 func (t *xlabsTracer) onBlockEnd(err error) {
 	defer t.cleanUp()
 
+	t.logger.Println("Executing onBlockEnd with error:%v", err != nil)
+
 	if err != nil {
 		return
 	}
@@ -120,6 +124,9 @@ func (t *xlabsTracer) onBlockEnd(err error) {
 }
 
 func (s *xlabsTracer) sendUDSMessage(payload Event) {
+
+	s.logger.Println("Executing sendUDSMessage with blockNumber:%d", payload.LatestBlock.Number)
+
 	// Step 1: Convert your Event to tracerproto.Event
 
 	var receipts []*tracerproto.Receipt
@@ -176,7 +183,7 @@ func (s *xlabsTracer) cleanUp() {
 }
 
 func (s *xlabsTracer) onClose() {
-	s.logger.Printf("xlabstracer closing\n")
+	s.logger.Printf("xlabstracer onClose\n")
 	s.cleanUp()
 	s.cancelFunc()
 	s.conn.Close()
