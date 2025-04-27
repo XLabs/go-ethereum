@@ -10,28 +10,37 @@ func convertHeader(h *types.Header) *pb.Header {
 	if h == nil {
 		return nil
 	}
-	return &pb.Header{
-		ParentHash:       h.ParentHash.Bytes(),
-		UncleHash:        h.UncleHash.Bytes(),
-		Coinbase:         h.Coinbase.Bytes(),
-		Root:             h.Root.Bytes(),
-		TxHash:           h.TxHash.Bytes(),
-		ReceiptHash:      h.ReceiptHash.Bytes(),
-		Bloom:            h.Bloom.Bytes(),
-		Difficulty:       h.Difficulty.Bytes(),
-		Number:           h.Number.Bytes(),
-		GasLimit:         h.GasLimit,
-		GasUsed:          h.GasUsed,
-		Time:             h.Time,
-		Extra:            h.Extra,
-		MixDigest:        h.MixDigest.Bytes(),
-		Nonce:            h.Nonce[:], // [8]byte to []byte
-		BaseFee:          h.BaseFee.Bytes(),
-		WithdrawalsHash:  h.WithdrawalsHash.Bytes(),
-		BlobGasUsed:      h.BlobGasUsed,
-		ExcessBlobGas:    h.ExcessBlobGas,
-		ParentBeaconRoot: h.ParentBeaconRoot.Bytes(),
+	p := &pb.Header{
+		ParentHash:    h.ParentHash.Bytes(),
+		UncleHash:     h.UncleHash.Bytes(),
+		Coinbase:      h.Coinbase.Bytes(),
+		Root:          h.Root.Bytes(),
+		TxHash:        h.TxHash.Bytes(),
+		ReceiptHash:   h.ReceiptHash.Bytes(),
+		Bloom:         h.Bloom.Bytes(),
+		Difficulty:    h.Difficulty.Bytes(),
+		Number:        h.Number.Bytes(),
+		GasLimit:      h.GasLimit,
+		GasUsed:       h.GasUsed,
+		Time:          h.Time,
+		Extra:         h.Extra,
+		MixDigest:     h.MixDigest.Bytes(),
+		Nonce:         h.Nonce[:], // [8]byte to []byte
+		BlobGasUsed:   h.BlobGasUsed,
+		ExcessBlobGas: h.ExcessBlobGas,
 	}
+
+	if h.BaseFee != nil {
+		p.BaseFee = h.BaseFee.Bytes()
+	}
+	if h.WithdrawalsHash != nil {
+		p.WithdrawalsHash = h.WithdrawalsHash.Bytes()
+	}
+	if h.ParentBeaconRoot != nil {
+		p.ParentBeaconRoot = h.ParentBeaconRoot.Bytes()
+	}
+
+	return p
 }
 
 func convertReceipt(r *types.Receipt) *pb.Receipt {
