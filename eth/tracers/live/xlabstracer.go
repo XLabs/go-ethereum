@@ -33,9 +33,12 @@ type xlabsTracer struct {
 }
 
 type Event struct {
-	LatestBlock    *types.Header
-	FinalizedBlock *types.Header
-	SafeBlock      *types.Header
+	Version        uint8         // Protocol version (start with 1)
+	LatestBlock    *types.Header // Always required
+	HasFinalized   bool          // If true, FinalizedBlock is present
+	FinalizedBlock *types.Header // Optional
+	HasSafe        bool          // If true, SafeBlock is present
+	SafeBlock      *types.Header // Optional
 	Receipts       []*types.Receipt
 }
 
@@ -122,10 +125,20 @@ func (s *xlabsTracer) onBlockEnd(err error) {
 	}
 
 	payload := Event{
+		Version:        1,
 		LatestBlock:    newBlock,
+		HasFinalized:   s.currentBlockEvent.Finalized != nil,
 		FinalizedBlock: finalizedBlock,
+		HasSafe:        s.currentBlockEvent.Safe != nil,
 		SafeBlock:      safeBlock,
 		Receipts:       txRecps,
+	}
+
+	if s.currentBlockEvent.Finalized != nil {
+		payload.FinalizedBlock = types.CopyHeader(s.currentBlockEvent.Finalized)
+	}
+	if s.currentBlockEvent.Safe != nil {
+		payload.SafeBlock = types.CopyHeader(s.currentBlockEvent.Safe)
 	}
 
 	// Send the payload to the unix-domain-socket
